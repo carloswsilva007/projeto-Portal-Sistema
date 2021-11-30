@@ -1,0 +1,293 @@
+-- 1 linha criada
+-- executar em database = SERVICE_DW owner = COLAB
+
+-- INSERE COLABORADOR ADMINISTRATIVO PEP
+-- informe os CPFS na linha 162
+DECLARE
+
+  str_xml    CLOB;
+  xml_status VARCHAR2(40);
+  xml_msg    VARCHAR(2000);
+  
+  v_existe_basica    NUMBER := 0;
+  v_cont             NUMBER := 0;
+  v_operacao_basico  VARCHAR2(1) := 'I';
+  
+  v_xml_exclui_cbo   VARCHAR(2000) := '';  
+  v_xml_exclui_esp   VARCHAR(2000) := '';
+  
+  v_operacao_colab   NUMBER;
+  
+  CURSOR cur_colab IS
+         SELECT DISTINCT ---- Cabeçalho
+                    0                                                       as mensagemID,
+                    '01.00'                                                 as versaoXML,
+                    1826                                                    as identificacaoCliente,
+                    'CADASTRO_PRESTADOR'                                    as servico,
+                    sysdate                                                 as dataHora,
+                    'HC'                                                    as empresaOrigem,
+                    'COLAB-HC'                                              as sistemaOrigem,
+                    1                                                       as empresaDestino,
+                    ---- Prestador
+                    'CADASTRO_PRESTADOR'                                    as sistemaDestino,
+                    NULL                                                    as usuario,
+                    null                                                    as senha,
+                    --
+                    case when 
+                        (select count(1)
+                           from prestador@colab_mv t1
+                          where t1.cd_prestador_integra = clco.id_colab) = 0
+                        then 'I'
+                        else 'A'                                            end operacao,
+                   --
+                   null                                                     as codigoPrestador,
+                   --
+                   clco.id_colab                                            as codigoPrestadorDePara,
+                   translate (clco.nome, 'ÑñÃã âÁáÉéÊêÚúÜüÇç??ÍíÌìÀàÔôÓóÕõ??OoÈèAaAa´??*.-''''','NnAaAaAaEeEeUuUuCcAaIiIiAaOoOoOoOoOoEeAaAaNn     ') as nomePrestador,
+                   translate (clco.nome, 'ÑñÃã âÀáÉéÊêUuÜüÇç??ÍíÌìÀàÔôÓóÕõ??OoÈèAaAa´??*.-''''','NnAaAaAaEeEeUuUuCcAaIiIiAaOoOoOoOoOoEeAaAaNn     ') as nomeMnemonico,
+                   decode(clco.conselho_codigo, 71, 'S', 'N')              as corpoClinico,
+                   to_char(clco.nascimento, 'YYYY-MM-DD')                  as dataNascimento,
+                   SUBSTR(clco.cpf, 1, 11)                                 as numeroCgcCpf,
+                   clco.numero_rg                                          as identidade,
+                   clco.nomemae                                            as nomeMae,
+                   clco.nomepai                                            as nomePai,
+                   clco.cns                                                as cns,
+                   to_char(clco.data_desligamento, 'YYYY-MM-DD')           as dataContratoFinal,
+                    ---- EnderecoResidencial
+                    null                                                   as cep,
+                    null                                                   as codigologradouro,
+                    null                                                   as codigologradourodepara,
+                    null                                                   as desclogradouro,
+                    null                                                   as descendereco,
+                    null                                                   as numeroendereco,
+                    null                                                   as complemento,
+                    null                                                   as bairro,
+                    NULL                                                   as codigocidade,
+                    null                                                   as codigocidadedepara,
+                    null                                                   as cidade,
+                    'S'                                                    as mostrarendereco,
+                    null                                                   as UF,
+                    ---- EnderecoComercial
+                    null                                                   as cepComercial,
+                    null                                                   as codigologradouroComercial,
+                    null                                                   as cdlogradourodeparaComercial,
+                    null                                                   as desclogradouroComercial,
+                    null                                                   as descenderecoComercial,
+                    null                                                   as numeroenderecoComercial,
+                    null                                                   as complementoComercial,
+                    null                                                   as bairroComercial,
+                    NULL                                                   as codigocidadeComercial,
+                    null                                                   as codigocidadedeparaComercial,
+                    null                                                   as cidadeComercial,
+                    'N'                                                    as mostrarenderecoComercial,
+                    null                                                   as UFComercial,
+                    ----
+                    52                                                     as codigotipoprestador, -- tipo prestador 52 administrativo PEP
+                    null                                                   as codigotipoprestadordepara,
+                    'OFICIAL ADMINISTRATIVO'                               as desctipoprestador,
+                    null                                                   as ccm,
+                    '3550302078015                  '                      as cnes,
+                    clco.email_corporativo                                 as EMAIL_CORPORATIVO,
+                    clco.conselho_codigo                                   as codigoconselho,
+                    clco.conselho                                          as descconselho,
+                    REPLACE(clco.conselho_numero, ' ', '')                 as numeroconselho,
+                    SUBSTR(clco.conselho_uf, 1, 2)                         as ufconselho,
+                    null                                                   as faculdade,
+                    null                                                   as inss,
+                    'N'                                                    as cessaocredito,
+                    null                                                   as dataentradacooperativa,
+                    null                                                   as matriculacooperativa,
+                    clco.pispasep                                          as PISPASEP,
+                    null                                                   as numeroinscricaoautonomo,
+                    'F'                                                    as vinculo,
+                    null                                                   as cargo,
+                    --
+                    case when (clco.data_desligamento is null or
+                               clco.data_desligamento > sysdate) 
+                         then 'A' else 'I'                                 end situacao,
+                    --                   
+                    to_char((select min(t.clva_data_admissao) 
+                       from cl_vinculo_administrativo t 
+                       where t.clva_id_colaborador = clva.clva_id_colaborador 
+                         and (t.clva_data_desligamento is null 
+                           or t.clva_data_desligamento > sysdate)), 'YYYY-MM-DD') as dataContratoInicio,
+                    --
+                    'N'                                                    as atuante,
+                    'N'                                                    as anestesista,
+                    'N'                                                    as auxiliar,
+                    'N'                                                    as cirurgiao,
+                    'N'                                                    as outros,
+                    'N'                                                    as auditorsus,
+                    null                                                   as codigobanco,
+                    null                                                   as nomebanco,
+                    null                                                   as codigoagencia,
+                    null                                                   as nomeagencia,
+                    null                                                   as numeroconta,
+                    null                                                   as observacao,
+                    --
+                    case when (clco.data_desligamento is null or
+                           clco.data_desligamento > sysdate) 
+                         then 'S' else 'N'                                 end ativo,
+                    --
+                    'S'                                                    as repassefaturasus,
+                   null                                                    as codigotipocontato,
+                   null                                                    as codigotipocontatodepara,
+                   null                                                    as desctipocontato,
+                   null                                                    as desccontato,
+                   null                                                    as mostrarcontato,
+                   null                                                    as operacaoContato,
+                   --
+                   --- se empresa = 16 PAHC mudar para 2 SAMSS
+                    case when mvme.cd_multi_empresa = 16 then '2'
+                   --- se empresa in (19,26,27,28) mudar para 1 ICHC
+                         when mvme.cd_multi_empresa in (19,26,27,28) then '1'
+                         else mvme.cd_multi_empresa                        end cd_multi_empresa,                  
+                   --
+                   (select min(va.clva_data_admissao) 
+                      from cl_vinculo_administrativo va 
+                     where va.clva_id_colaborador = clco.id_colab 
+                     and (va.clva_data_desligamento is null or va.clva_data_desligamento > null)) as clva_data_admissao,
+                   --
+                   'O'                                                    as tipoprestador  -- default O = OUTROS
+      FROM 
+          colab.cl_colaborador_demografico clco
+        , colab.cl_vinculo_administrativo  clva
+        , colab.cl_mv_multi_empresas       mvme
+--        , colab.cl_mv_tip_presta           mvtp
+     WHERE
+          clco.id_colab                    = clva.clva_id_colaborador
+      and clva.clva_id_instituto           = mvme.id_instituto_colab
+      and mvme.envio_ativo                 = 'S'      
+--      and clco.conselho_id                 = mvtp.id_conselho_colab (+)
+      and clco.cpf in  ('48903494806');  
+
+BEGIN
+
+  FOR c1 IN cur_colab LOOP
+
+/*    dbms_output.put_line(' = ' || c1.nomeprestador || ' - ' ||
+                         c1.mensagemID);*/
+    v_xml_exclui_cbo := '';  
+    v_xml_exclui_esp := '';
+    v_cont           := v_cont + 1;
+     
+    str_xml := '<Mensagem>
+                    <Cabecalho>
+                      <mensagemID>'             || v_cont                   || '</mensagemID>
+                      <versaoXML>'              || c1.versaoxml             || '</versaoXML>
+                      <identificacaoCliente>'   || c1.identificacaocliente  || '</identificacaoCliente>
+                      <servico>CADASTRO_PRESTADOR</servico>
+                      <dataHora>'               || c1.datahora              || '</dataHora>
+                      <empresaOrigem>'          || c1.empresaorigem         || '</empresaOrigem>
+                      <sistemaOrigem>'          || c1.sistemaorigem         || '</sistemaOrigem>
+                      <empresaDestino>'         || c1.empresadestino        || '</empresaDestino>
+                      <sistemaDestino>'         || c1.sistemadestino        || '</sistemaDestino>
+                      <usuario>'                || c1.usuario               || '</usuario>
+                      <senha>'                  || c1.senha                 || '</senha>
+                    </Cabecalho>
+                    <Prestador>
+                       <idIntegracao></idIntegracao>
+                       <tipoPrestador>'         || c1.tipoprestador         || '</tipoPrestador>
+                       <operacao>'              || c1.operacao              || '</operacao>
+                       <codigoPrestador>'       || c1.codigoprestador       || '</codigoPrestador>
+                       <codigoPrestadorDePara>' || c1.codigoprestadordepara || '</codigoPrestadorDePara>
+                       <nomePrestador>'         || SUBSTR(trim(c1.nomeprestador), 0, 40) || '</nomePrestador>
+                       <nomeMnemonico>'         || SUBSTR( c1.nomemnemonico, 0, 20 ) || '</nomeMnemonico>
+                      <corpoClinico>'           || c1.corpoclinico          || '</corpoClinico>
+                       <dataNascimento>'        || c1.datanascimento        || '</dataNascimento>
+                       <numeroCgcCpf>'          || c1.numerocgccpf          || '</numeroCgcCpf>
+                       <identidade>'            || c1.identidade            || '</identidade>
+                       <nomeMae>'               || c1.nomemae               || '</nomeMae>
+                       <nomePai>'               || c1.nomepai               || '</nomePai>
+                      <cns>'                    || trim(c1.cns)             || '</cns>
+                      <dataContratoFinal>'      || c1.dataContratoFinal     || '</dataContratoFinal>
+                      <enderecoResidencial>
+                        <cep>'                  || c1.cep                   || '</cep>
+                        <codigoLogradouro>'     || c1.codigologradouro      || '</codigoLogradouro>
+                        <codigoLogradouroDePara>' || c1.codigologradourodepara || '</codigoLogradouroDePara>
+                        <descLogradouro>'       || c1.desclogradouro        || '</descLogradouro>
+                        <descEndereco>'         || c1.descendereco          || '</descEndereco>
+                        <numeroEndereco>'       || c1.numeroendereco        || '</numeroEndereco>
+                        <complemento>'          || c1.complemento           || '</complemento>
+                        <bairro>'               || c1.bairro                || '</bairro>
+                        <codigoCidade>'         || c1.codigocidade          || '</codigoCidade>
+                        <codigoCidadeDePara>'   || c1.codigocidadedepara    || '</codigoCidadeDePara>
+                        <descCidade>'           || c1.cidade                || '</descCidade>
+                        <mostrarEndereco>'      || c1.mostrarendereco       || '</mostrarEndereco>
+                      </enderecoResidencial>
+                      <enderecoComercial>
+                        <cep></cep>
+                        <codigoLogradouro></codigoLogradouro>
+                        <codigoLogradouroDePara></codigoLogradouroDePara>
+                        <descLogradouro></descLogradouro>
+                        <descEndereco></descEndereco>
+                        <numeroEndereco></numeroEndereco>
+                        <complemento></complemento>
+                        <bairro></bairro>
+                        <codigoCidade></codigoCidade>
+                        <codigoCidadeDePara></codigoCidadeDePara>
+                        <descCidade></descCidade>
+                        <mostrarEndereco>N</mostrarEndereco>
+                      </enderecoComercial>
+                       <codigoTipoPrestador>'   || c1.codigotipoprestador   || '</codigoTipoPrestador>
+                       <codigoTipoPrestadorDePara>' || c1.codigotipoprestadordepara || '</codigoTipoPrestadorDePara>
+                       <descTipoPrestador>'     || c1.desctipoprestador     || '</descTipoPrestador>
+                       <ccm>'                   || c1.ccm                   || '</ccm>
+                       <cnes>'                  || SUBSTR(trim(c1.cnes), 7, 7) || '</cnes>
+                       <email>'                 || SUBSTR(trim(c1.email_corporativo), 0, 30) || '</email>
+                       <codigoConselho>'        || c1.numeroconselho        || '</codigoConselho>
+                       <descConselho>'          || c1.descconselho          || '</descConselho>
+                       <numeroConselho>'        || c1.numeroconselho        || '</numeroConselho>
+                       <faculdade>'             || c1.faculdade             || '</faculdade>
+                       <inss>'                  || c1.inss                  || '</inss>
+                       <cessaoCredito>'         || c1.cessaocredito         || '</cessaoCredito>
+                      <dataEntradaCooperativa>' || c1.dataentradacooperativa || '</dataEntradaCooperativa>
+                      <matriculaCooperativa>'   || c1.matriculacooperativa  || '</matriculaCooperativa>
+                       <pisPasep>'              || c1.pispasep              || '</pisPasep>
+                       <numeroInscricaoAutonomo>' || c1.numeroinscricaoautonomo || '</numeroInscricaoAutonomo>
+                      <vinculo>'                || c1.vinculo               || '</vinculo>
+                       <cargo>'                 || c1.cargo                 || '</cargo>
+                       <situacao>'              || c1.situacao              || '</situacao>
+                       <dataContratoInicio>'    || c1.datacontratoinicio    || '</dataContratoInicio>
+                       <atuante>'               || c1.atuante               || '</atuante>
+                       <anestesista>'           || c1.anestesista           || '</anestesista>
+                       <auxiliar>'              || c1.auxiliar              || '</auxiliar>
+                       <cirurgiao>'             || c1.cirurgiao             || '</cirurgiao>
+                       <outros>'                || c1.outros                || '</outros>
+                       <auditorSus>'            || c1.auditorsus            || '</auditorSus>
+                       <codigoBanco>'           || c1.codigobanco           || '</codigoBanco>
+                      <nomeBanco>'              || c1.nomebanco             || '</nomeBanco>
+                       <codigoAgencia>'         || c1.codigoagencia         || '</codigoAgencia>
+                       <nomeAgencia>'           || c1.nomeagencia           || '</nomeAgencia>
+                       <numeroConta>'           || c1.numeroconta           || '</numeroConta>
+                       <observacao>'            || c1.observacao            || '</observacao>
+                      <ativo>'                  || c1.ativo                 || '</ativo>
+                      <repasseFaturaAmbSus>'    || c1.repassefaturasus      || '</repasseFaturaAmbSus>';
+   
+    str_xml := str_xml || '<listaConvenio>
+                            <Convenio>
+                                <codigoPrestadorConveniado></codigoPrestadorConveniado>
+                                <codigoConvenio>1</codigoConvenio>
+                                <pagaPeloConvenio>N</pagaPeloConvenio>
+                                <operacao>I</operacao>
+                                <codigoUnidadeOrigem></codigoUnidadeOrigem>
+                             </Convenio>
+                             <Convenio>
+                                <codigoPrestadorConveniado></codigoPrestadorConveniado>
+                                <codigoConvenio>2</codigoConvenio>
+                                <pagaPeloConvenio>N</pagaPeloConvenio>
+                                <operacao>I</operacao>
+                                <codigoUnidadeOrigem></codigoUnidadeOrigem>
+                             </Convenio>
+                           </listaConvenio>
+                    </Prestador>
+                  </Mensagem>';
+    
+--    insert into tmp_mv_xml values(str_xml);
+--    commit;
+    envia_xml_mv(str_xml, xml_status, xml_msg);
+
+  END LOOP;
+--
+--
+END;
